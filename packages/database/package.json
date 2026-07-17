@@ -1,0 +1,22 @@
+{
+  "name": "@contextforge/database",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node copy-wasm.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "rebuild:native": "echo \"sql.js is WASM; no native build needed\""
+  },
+  "dependencies": {
+    "@contextforge/shared": "workspace:*",
+    "zod": "^3.24.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {}
+}

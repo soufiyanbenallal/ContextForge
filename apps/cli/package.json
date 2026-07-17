@@ -1,0 +1,22 @@
+{
+  "name": "@contextforge/cli",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agent-memory": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@contextforge/shared": "workspace:*",
+    "@contextforge/database": "workspace:*",
+    "@contextforge/core": "workspace:*",
+    "@contextforge/exporters": "workspace:*",
+    "@contextforge/mcp-server": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

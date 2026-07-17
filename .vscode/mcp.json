@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "contextforge": {
+      "type": "stdio",
+      "command": "/Users/user/.nvm/versions/node/v23.6.0/bin/node",
+      "args": [
+        "/Users/user/Documents/beyonders/ContextForge/agent-memory/packages/mcp-server/dist/server.js"
+      ],
+      "env": {
+        "CONTEXTFORGE_DB": "/Users/user/.contextforge/memory.db"
+      }
+    }
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "name": "contextforge-vscode",
+  "version": "0.2.8",
+  "private": true,
+  "displayName": "ContextForge",
+  "description": "Visual dashboard and feedback UI for ContextForge — a learning memory layer for AI coding agents",
+  "type": "commonjs",
+  "publisher": "local-contextforge",
+  "icon": "logo.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/contextforge/contextforge"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "main": "./dist/extension.js",
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:contextforge.openDashboard",
+    "onCommand:contextforge.refresh",
+    "onCommand:contextforge.rejectResult",
+    "onCommand:contextforge.recordCorrection",
+    "onCommand:contextforge.learnFromError"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package": "vsce package --no-dependencies",
+    "rebuild:native": "echo \"ContextForge uses sql.js (WASM) — no native addon build required.\""
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "contextforge.openDashboard",
+        "title": "ContextForge: Open Dashboard",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "contextforge.refresh",
+        "title": "ContextForge: Refresh"
+      },
+      {
+        "command": "contextforge.acceptResult",
+        "title": "ContextForge: Accept Result"
+      },
+      {
+        "command": "contextforge.rejectResult",
+        "title": "ContextForge: Reject Result"
+      },
+      {
+        "command": "contextforge.recordCorrection",
+        "title": "ContextForge: Record Correction"
+      },
+      {
+        "command": "contextforge.saveAsProjectRule",
+        "title": "ContextForge: Save as Project Rule"
+      },
+      {
+        "command": "contextforge.saveAsGlobalPreference",
+        "title": "ContextForge: Save as Global Preference"
+      },
+      {
+        "command": "contextforge.viewRelevantMemory",
+        "title": "ContextForge: View Relevant Memory"
+      },
+      {
+        "command": "contextforge.reviewProposedLessons",
+        "title": "ContextForge: Review Proposed Lessons"
+      },
+      {
+        "command": "contextforge.checkConflicts",
+        "title": "ContextForge: Check Rule Conflicts"
+      },
+      {
+        "command": "contextforge.showRulesForFile",
+        "title": "ContextForge: Show Rules for Current File"
+      },
+      {
+        "command": "contextforge.approveLesson",
+        "title": "ContextForge: Approve Selected Lesson"
+      },
+      {
+        "command": "contextforge.rejectLesson",
+        "title": "ContextForge: Reject Selected Lesson"
+      },
+      {
+        "command": "contextforge.exportInstructions",
+        "title": "ContextForge: Export Instructions"
+      },
+      {
+        "command": "contextforge.learnFromError",
+        "title": "ContextForge: Learn From Current Errors"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "contextforge",
+          "title": "ContextForge",
+          "icon": "$(brain)"
+        }
+      ]
+    },
+    "views": {
+      "contextforge": [
+        {
+          "id": "contextforgeView",
+          "name": "ContextForge",
+          "icon": "$(brain)",
+          "contextualTitle": "ContextForge",
+          "clickCommand": "contextforge.openDashboard"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "contextforge.showRulesForFile",
+          "when": "editorTextFocus",
+          "group": "contextforge@1"
+        },
+        {
+          "command": "contextforge.saveAsProjectRule",
+          "when": "editorHasSelection",
+          "group": "contextforge@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "contextforge.openDashboard",
+          "when": "view == contextforgeView",
+          "group": "navigation"
+        },
+        {
+          "command": "contextforge.refresh",
+          "when": "view == contextforgeView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "contextforge.approveLesson",
+          "when": "view == contextforgeView && viewItem == 'rule:proposed'",
+          "group": "inline"
+        },
+        {
+          "command": "contextforge.rejectLesson",
+          "when": "view == contextforgeView && viewItem == 'rule:proposed'",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ContextForge",
+      "properties": {
+        "contextforge.dbPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Path to the ContextForge SQLite database. Defaults to ~/.contextforge/memory.db"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@contextforge/core": "workspace:*",
+    "@contextforge/database": "workspace:*",
+    "@contextforge/exporters": "workspace:*",
+    "@contextforge/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.95.0",
+    "esbuild": "^0.21.5"
+  }
+}

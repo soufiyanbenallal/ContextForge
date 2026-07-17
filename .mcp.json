@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "contextforge": {
+      "command": "node",
+      "args": ["./packages/mcp-server/dist/server.js"],
+      "env": {
+        "CONTEXTFORGE_DB": "~/.contextforge/memory.db"
+      }
+    }
+  }
+}
