@@ -7,6 +7,8 @@ import {
 import { DashboardPanel } from "./dashboard.js";
 import { exportForProject } from "@contextforge/exporters";
 import { getContext } from "@contextforge/core";
+import { relative } from "node:path";
+import { matchesAppliesTo } from "./glob.js";
 
 const CLASSIFICATIONS: { label: string; value: FeedbackClassification }[] = [
   { label: "Incorrect code", value: "incorrect-code" },
@@ -23,6 +25,16 @@ const SCOPE_LABELS: { label: string; value: KnowledgeScope }[] = [
   { label: "This project", value: "project" },
   { label: "All projects (global)", value: "global" },
 ];
+
+const channels = new Map<string, vscode.OutputChannel>();
+function channel(name: string): vscode.OutputChannel {
+  let c = channels.get(name);
+  if (!c) {
+    c = vscode.window.createOutputChannel(name);
+    channels.set(name, c);
+  }
+  return c;
+}
 
 async function requireProject(backend: Backend) {
   const proj = backend.getCurrentProject();
@@ -108,7 +120,7 @@ async function viewRelevantMemory(backend: Backend) {
   const editor = vscode.window.activeTextEditor;
   const files = editor ? [editor.document.fileName] : undefined;
   const ctx = getContext(backend.repos, { projectId: proj.projectId, files });
-  const panel = vscode.window.createOutputChannel("ContextForge");
+  const panel = channel("ContextForge");
   panel.clear();
   panel.appendLine("Relevant memory for current context:\n");
   panel.appendLine("Required rules:");
@@ -124,9 +136,25 @@ async function viewRelevantMemory(backend: Backend) {
   panel.show();
 }
 
-async function reviewProposedLessons(backend: Backend, forceAction?: "approve" | "reject") {
+/** The tree passes the clicked node; the dashboard/palette pass nothing. */
+function nodeItemId(node: unknown): string | undefined {
+  const n = node as { kind?: string; item?: { id?: string } } | undefined;
+  return n?.kind === "rule" ? n.item?.id : undefined;
+}
+
+async function reviewProposedLessons(
+  backend: Backend,
+  forceAction?: "approve" | "reject",
+  node?: unknown
+) {
   const proj = await requireProject(backend);
   if (!proj) return;
+  const clickedId = nodeItemId(node);
+  if (clickedId && forceAction) {
+    await resolveLesson(backend, clickedId, forceAction);
+    backend.refresh();
+    return;
+  }
   const proposed = backend.repos.listKnowledge({
     projectId: proj.projectId,
     status: "proposed",
@@ -147,15 +175,20 @@ async function reviewProposedLessons(backend: Backend, forceAction?: "approve" |
     });
     action = a === "Approve" ? "approve" : a === "Reject" ? "reject" : undefined;
   }
-  if (action === "approve") {
-    backend.repos.updateKnowledgeStatus(pick.id, "approved");
-    vscode.window.showInformationMessage("ContextForge: lesson approved.");
-  } else if (action === "reject") {
-    const reason = await vscode.window.showInputBox({ prompt: "Reason for rejection" });
-    backend.repos.updateKnowledgeStatus(pick.id, "rejected", { reason: reason ?? null });
-    vscode.window.showInformationMessage("ContextForge: lesson rejected.");
-  }
+  if (action) await resolveLesson(backend, pick.id, action);
   backend.refresh();
+}
+
+async function resolveLesson(backend: Backend, id: string, action: "approve" | "reject") {
+  if (action === "approve") {
+    backend.repos.updateKnowledgeStatus(id, "approved");
+    vscode.window.showInformationMessage("ContextForge: lesson approved.");
+    return;
+  }
+  const reason = await vscode.window.showInputBox({ prompt: "Reason for rejection (optional)" });
+  if (reason === undefined) return; // user cancelled: leave the lesson untouched
+  backend.repos.updateKnowledgeStatus(id, "rejected", { reason: reason || null });
+  vscode.window.showInformationMessage("ContextForge: lesson rejected.");
 }
 
 async function checkConflicts(backend: Backend) {
@@ -187,18 +220,13 @@ async function showRulesForFile(backend: Backend) {
   const proj = await requireProject(backend);
   if (!proj) return;
   const file = editor.document.fileName;
+  const rel = relative(proj.rootPath, file);
   const items = backend.repos.listKnowledge({
     projectId: proj.projectId,
     status: "approved",
   });
-  const matching = items.filter((i) =>
-    (i.appliesTo ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .some((p) => file.includes(p.replace("/**", "").replace(/\/$/, "")))
-  );
-  const panel = vscode.window.createOutputChannel("ContextForge");
+  const matching = items.filter((i) => matchesAppliesTo(i.appliesTo, rel));
+  const panel = channel("ContextForge");
   panel.clear();
   panel.appendLine(`Rules affecting ${editor.document.fileName}:\n`);
   if (matching.length === 0) panel.appendLine("  (none with an explicit file scope)");
@@ -220,7 +248,7 @@ async function exportInstructions(backend: Backend) {
     vscode.window.showInformationMessage("ContextForge: instructions are up to date.");
     return;
   }
-  const panel = vscode.window.createOutputChannel("ContextForge Export");
+  const panel = channel("ContextForge Export");
   panel.clear();
   panel.appendLine(`Export plan: ${planned.length} file(s), ${changes.length} with changes.\n`);
   for (const f of changes) {
@@ -283,12 +311,12 @@ export function registerCommands(
   treeProvider: { refresh(): void }
 ) {
   const wrap =
-    (fn: (b: Backend) => Promise<void>) => async () => {
+    (fn: (b: Backend, ...args: any[]) => Promise<void>) => async (...args: any[]) => {
       if (!vscode.workspace.isTrusted) {
         vscode.window.showErrorMessage("ContextForge: workspace is not trusted.");
         return;
       }
-      await fn(backend);
+      await fn(backend, ...args);
       treeProvider.refresh();
     };
 
@@ -311,8 +339,8 @@ export function registerCommands(
   register("contextforge.checkConflicts", wrap((b) => checkConflicts(b)));
   register("contextforge.showRulesForFile", () => showRulesForFile(backend));
   register("contextforge.exportInstructions", wrap((b) => exportInstructions(b)));
-  register("contextforge.approveLesson", wrap(async (b) => reviewProposedLessons(b, "approve")));
-  register("contextforge.rejectLesson", wrap(async (b) => reviewProposedLessons(b, "reject")));
+  register("contextforge.approveLesson", wrap((b, node) => reviewProposedLessons(b, "approve", node)));
+  register("contextforge.rejectLesson", wrap((b, node) => reviewProposedLessons(b, "reject", node)));
   register("contextforge.learnFromError", wrap((b) => learnFromError(b)));
 
   register("contextforge.openDashboard", async () => {

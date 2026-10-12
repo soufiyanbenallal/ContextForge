@@ -6,7 +6,15 @@ type SqlJsDatabase = any;
 type Statement = any;
 import { MIGRATIONS } from "./migrations/schema.js";
 import { nowIso } from "@contextforge/shared";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  statSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,54 +72,186 @@ function bindParams(stmt: Statement, params: unknown[]): void {
   }
 }
 
+interface FileStamp {
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+  size: bigint;
+  ino: bigint;
+}
+
+function stamp(path: string): FileStamp | null {
+  try {
+    const st = statSync(path, { bigint: true });
+    return { mtimeNs: st.mtimeNs, ctimeNs: st.ctimeNs, size: st.size, ino: st.ino };
+  } catch {
+    return null;
+  }
+}
+
+function sameStamp(a: FileStamp | null, b: FileStamp | null): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.mtimeNs === b.mtimeNs &&
+    a.ctimeNs === b.ctimeNs &&
+    a.size === b.size &&
+    a.ino === b.ino
+  );
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const LOCK_TIMEOUT_MS = 10_000;
+const LOCK_STALE_MS = 15_000;
+
+/**
+ * sql.js is an in-memory database. Several processes (VS Code extension, MCP
+ * server, CLI) open the same file, so this adapter keeps them coherent:
+ *  - reads first reload the file if another process changed it;
+ *  - writes take a cross-process lock, reload, apply, then save atomically
+ *    (temp file + rename), so no process overwrites another's changes.
+ */
 class SqlJsAdapter implements DB {
   private db: SqlJsDatabase;
   private path: string;
+  private lockPath: string;
+  private seen: FileStamp | null;
+  private lockDepth = 0;
+  private dirty = false;
 
   constructor(db: SqlJsDatabase, path: string) {
     this.db = db;
     this.path = path;
+    this.lockPath = path + ".lock";
+    this.seen = stamp(path);
+  }
+
+  /**
+   * Reload from disk when another process has written the file. `force`
+   * skips the cheap change check (used under the write lock, where a missed
+   * reload would lose another process's data).
+   */
+  private refresh(force = false): void {
+    const now = stamp(this.path);
+    if (!now || (!force && sameStamp(now, this.seen))) return;
+    const next = new SQL(readFileSync(this.path));
+    this.db.close();
+    this.db = next;
+    this.seen = now;
+  }
+
+  private acquire(): void {
+    if (this.lockDepth++ > 0) return;
+    const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    for (;;) {
+      try {
+        mkdirSync(this.lockPath);
+        break;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+          this.lockDepth--;
+          throw err;
+        }
+        try {
+          if (Date.now() - statSync(this.lockPath).mtimeMs > LOCK_STALE_MS) {
+            rmSync(this.lockPath, { recursive: true, force: true });
+            continue;
+          }
+        } catch {
+          continue; // lock vanished; retry immediately
+        }
+        if (Date.now() > deadline) {
+          this.lockDepth--;
+          throw new Error(`ContextForge: timed out waiting for database lock (${this.lockPath})`);
+        }
+        sleepSync(15);
+      }
+    }
+    this.refresh(true);
+  }
+
+  private release(): void {
+    if (--this.lockDepth > 0) return;
+    rmSync(this.lockPath, { recursive: true, force: true });
   }
 
   private save(): void {
-    const bytes = this.db.export();
     const dir = dirname(this.path);
     if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(this.path, Buffer.from(bytes));
+    const tmp = `${this.path}.${process.pid}.tmp`;
+    writeFileSync(tmp, Buffer.from(this.db.export()));
+    renameSync(tmp, this.path);
+    this.seen = stamp(this.path);
+    this.dirty = false;
+  }
+
+  /** Run a mutation under the lock; persist unless inside a transaction. */
+  private write<R>(fn: () => R): R {
+    this.acquire();
+    try {
+      const result = fn();
+      this.dirty = true;
+      if (this.lockDepth === 1) this.save();
+      return result;
+    } catch (err) {
+      if (this.lockDepth === 1) this.discard();
+      throw err;
+    } finally {
+      this.release();
+    }
+  }
+
+  /** Drop unsaved in-memory changes by reloading the last saved state. */
+  private discard(): void {
+    this.dirty = false;
+    if (!existsSync(this.path)) return;
+    const next = new SQL(readFileSync(this.path));
+    this.db.close();
+    this.db = next;
+    this.seen = stamp(this.path);
   }
 
   prepare(sql: string): PreparedQuery {
-    const stmt = this.db.prepare(sql);
+    const read = <R>(fn: (stmt: Statement) => R): R => {
+      if (this.lockDepth === 0) this.refresh();
+      const stmt = this.db.prepare(sql);
+      try {
+        return fn(stmt);
+      } finally {
+        stmt.free();
+      }
+    };
     return {
-      run: (...params: unknown[]) => {
-        bindParams(stmt, params);
-        stmt.step();
-        stmt.reset();
-        this.save();
-      },
-      get: (...params: unknown[]) => {
-        bindParams(stmt, params);
-        if (stmt.step()) {
-          const row = stmt.getAsObject();
-          stmt.reset();
-          return row as unknown as Record<string, unknown>;
-        }
-        stmt.reset();
-        return undefined;
-      },
-      all: (...params: unknown[]) => {
-        bindParams(stmt, params);
-        const rows: Record<string, unknown>[] = [];
-        while (stmt.step()) rows.push(stmt.getAsObject() as unknown as Record<string, unknown>);
-        stmt.reset();
-        return rows;
-      },
+      run: (...params: unknown[]) =>
+        this.write(() => {
+          const stmt = this.db.prepare(sql);
+          try {
+            bindParams(stmt, params);
+            stmt.step();
+          } finally {
+            stmt.free();
+          }
+        }),
+      get: (...params: unknown[]) =>
+        read((stmt) => {
+          bindParams(stmt, params);
+          return stmt.step()
+            ? (stmt.getAsObject() as unknown as Record<string, unknown>)
+            : undefined;
+        }),
+      all: (...params: unknown[]) =>
+        read((stmt) => {
+          bindParams(stmt, params);
+          const rows: Record<string, unknown>[] = [];
+          while (stmt.step()) rows.push(stmt.getAsObject() as unknown as Record<string, unknown>);
+          return rows;
+        }),
     };
   }
 
   exec(sql: string): void {
-    this.db.exec(sql);
-    this.save();
+    this.write(() => this.db.exec(sql));
   }
 
   pragma(_sql: string): unknown {
@@ -120,17 +260,13 @@ class SqlJsAdapter implements DB {
   }
 
   transaction<T extends (...args: never[]) => unknown>(fn: T): T {
-    // sql.js auto-commits each statement; wrap without explicit BEGIN/COMMIT
-    // (which can leave a dangling transaction state). Persist after the block.
-    return ((...args: never[]) => {
-      const result = fn(...args);
-      this.save();
-      return result;
-    }) as T;
+    // Hold the cross-process lock for the whole block and save once at the
+    // end. If the block throws, in-memory changes are discarded.
+    return ((...args: never[]) => this.write(() => fn(...args))) as T;
   }
 
   close(): void {
-    this.save();
+    if (this.dirty) this.save();
     this.db.close();
   }
 }

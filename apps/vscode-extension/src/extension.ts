@@ -3,7 +3,7 @@ import { createBackend, Backend } from "./backend.js";
 import { MemoryTreeProvider } from "./tree.js";
 import { registerCommands } from "./commands.js";
 import { MemoryDiagnostics } from "./diagnostics.js";
-import { watchTaskFaults, watchTerminalFaults } from "./capture.js";
+import { watchTaskFaults } from "./capture.js";
 
 let backend: Backend | null = null;
 let diagnostics: MemoryDiagnostics | null = null;
@@ -47,10 +47,9 @@ async function bootstrap(context: vscode.ExtensionContext): Promise<void> {
     vscode.window.onDidChangeActiveTextEditor(() => diagnostics?.refresh())
   );
 
-  // Passive fault capture: build/test/lint/typecheck/terminal errors are
-  // automatically recorded as lesson proposals (advanced learning loop).
+  // Opt-in (contextforge.captureFaults): failed build/test/lint tasks are
+  // recorded as lesson proposals.
   context.subscriptions.push(watchTaskFaults(backend));
-  context.subscriptions.push(watchTerminalFaults(backend));
 
   // Refresh the tree once on activation.
   treeProvider.refresh();

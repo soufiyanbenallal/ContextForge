@@ -3,7 +3,7 @@ import { openDatabase, Repositories } from "@contextforge/database";
 import { detectProject } from "@contextforge/core";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface Backend {
   repos: Repositories;
@@ -21,7 +21,7 @@ export function resolveDbPath(): string {
 
 export async function createBackend(): Promise<Backend> {
   const path = resolveDbPath();
-  const dir = path.slice(0, path.lastIndexOf("/"));
+  const dir = dirname(path);
   if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
   const db = await openDatabase(path);
   const repos = new Repositories(db);

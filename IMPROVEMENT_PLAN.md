@@ -80,3 +80,16 @@ MCP server (agents)  ─┘
 - **DB approach:** `better-sqlite3` per-platform VSIX (recommended) vs. a local service.
 - **Agent targets to prioritise:** Copilot / Claude Code / Cursor / Codex?
 - **Passive capture:** keep (opt-in) or drop entirely?
+
+## 7. Progress
+
+**Done (this branch)**
+- Phase 0: reproduced #1 (lost writes between two DB handles) with `tests/concurrency.test.ts`, including a 4-process stress test.
+- Phase 1, partial:
+  - #1 fixed. The sql.js adapter now takes a cross-process lock, reloads on external change and saves atomically. I kept sql.js instead of `better-sqlite3` because native modules inside VS Code's Electron need per-platform/ABI builds; the correctness problem is solved either way. Revisit if write volume grows.
+  - #2 dashboard entry is now a tree item ("Open dashboard — N to review"); the invalid `clickCommand` is removed.
+  - #3 inline approve/reject act on the clicked item; cancelling the reject prompt no longer rejects.
+  - #4 terminal scraping removed; task-failure capture is opt-in (`contextforge.captureFaults`, default off).
+  - #8 Windows path bug, output-channel leak, glob matching, duplicate conflicts, relative-path diagnostics, `.vsix` files removed from git.
+
+**Not started**: live refresh via file watcher, status-bar badge, Phase 2 (Inbox webview, diff-based conflicts/export), Phase 3 (in-editor feedback, Connect agents wizard), real-VS-Code E2E tests.

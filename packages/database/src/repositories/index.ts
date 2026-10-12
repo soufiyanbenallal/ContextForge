@@ -661,6 +661,16 @@ export class Repositories {
     conflictType: ConflictRecord["conflictType"];
     explanation?: string | null;
   }): ConflictRecord {
+    // Re-running conflict detection must not pile up duplicates: return the
+    // existing open conflict for the same pair of rules (either order).
+    const existing = this.db
+      .prepare(
+        "SELECT id FROM conflicts WHERE status='open' AND ((left_item_id=? AND right_item_id=?) OR (left_item_id=? AND right_item_id=?)) LIMIT 1"
+      )
+      .get(input.leftItemId, input.rightItemId, input.rightItemId, input.leftItemId) as
+      | { id: string }
+      | undefined;
+    if (existing) return this.getConflict(existing.id)!;
     const id = newId("cnf");
     this.db
       .prepare(

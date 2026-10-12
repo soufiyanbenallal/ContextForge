@@ -3,7 +3,7 @@
   "version": "0.2.8",
   "private": true,
   "displayName": "ContextForge",
-  "description": "Visual dashboard and feedback UI for ContextForge — a learning memory layer for AI coding agents",
+  "description": "Visual dashboard and feedback UI for ContextForge \u2014 a learning memory layer for AI coding agents",
   "type": "commonjs",
   "publisher": "local-contextforge",
   "icon": "logo.png",
@@ -31,7 +31,7 @@
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "package": "vsce package --no-dependencies",
-    "rebuild:native": "echo \"ContextForge uses sql.js (WASM) — no native addon build required.\""
+    "rebuild:native": "echo \"ContextForge uses sql.js (WASM) \u2014 no native addon build required.\""
   },
   "contributes": {
     "commands": [
@@ -112,8 +112,7 @@
           "id": "contextforgeView",
           "name": "ContextForge",
           "icon": "$(brain)",
-          "contextualTitle": "ContextForge",
-          "clickCommand": "contextforge.openDashboard"
+          "contextualTitle": "ContextForge"
         }
       ]
     },
@@ -165,9 +164,21 @@
           ],
           "default": null,
           "description": "Path to the ContextForge SQLite database. Defaults to ~/.contextforge/memory.db"
+        },
+        "contextforge.captureFaults": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically record failed VS Code tasks (build/test/lint) as proposed lessons. Off by default."
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "contextforgeView",
+        "contents": "Open a folder to start using ContextForge.\n[Open Folder](command:vscode.openFolder)",
+        "when": "workbenchState == empty"
+      }
+    ]
   },
   "dependencies": {
     "@contextforge/core": "workspace:*",
