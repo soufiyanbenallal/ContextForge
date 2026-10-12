@@ -5,3 +5,5 @@ build.mjs
 tsconfig.json
 **/*.map
 node_modules/**
+.vscode-test/**
+e2e/**

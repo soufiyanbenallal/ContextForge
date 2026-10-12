@@ -4,10 +4,14 @@ import {
   FeedbackClassification,
   KnowledgeScope,
 } from "@contextforge/shared";
-import { DashboardPanel } from "./dashboard.js";
+import { InboxPanel } from "./inbox.js";
+import { showDiff, virtualUri } from "./virtual-docs.js";
+import { teach } from "./service.js";
+import { planConnect, verifyServer, TARGETS, AgentTarget } from "./connect.js";
 import { exportForProject } from "@contextforge/exporters";
 import { getContext } from "@contextforge/core";
-import { relative } from "node:path";
+import { dirname, extname, relative, join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { matchesAppliesTo } from "./glob.js";
 
 const CLASSIFICATIONS: { label: string; value: FeedbackClassification }[] = [
@@ -248,26 +252,186 @@ async function exportInstructions(backend: Backend) {
     vscode.window.showInformationMessage("ContextForge: instructions are up to date.");
     return;
   }
-  const panel = channel("ContextForge Export");
-  panel.clear();
-  panel.appendLine(`Export plan: ${planned.length} file(s), ${changes.length} with changes.\n`);
-  for (const f of changes) {
-    panel.appendLine(`--- ${f.path} ---`);
-    panel.appendLine(f.diff ?? "");
-    panel.appendLine("");
+  // Native diff editor for every changed file; nothing is written until the
+  // user confirms which files to apply.
+  const emptyDoc = virtualUri("empty", "");
+  const toOpen = changes.slice(0, 8);
+  for (const f of toOpen) {
+    const rel = relative(proj.rootPath, f.path);
+    const left = f.exists ? vscode.Uri.file(f.path) : emptyDoc;
+    const right = virtualUri(rel, f.content);
+    await showDiff(left, right, `ContextForge export: ${rel}${f.exists ? "" : " (new)"}`);
   }
-  panel.show();
-  const confirm = await vscode.window.showWarningMessage(
-    `ContextForge will write ${changes.length} file(s). Continue?`,
-    "Apply",
-    "Cancel"
+  const picks = await vscode.window.showQuickPick(
+    changes.map((f) => ({
+      label: relative(proj.rootPath, f.path),
+      description: f.exists ? "modified" : "new file",
+      picked: true,
+      file: f,
+    })),
+    {
+      canPickMany: true,
+      title: "Apply export — pick the files to write (diffs are open in the editor)",
+      placeHolder: "Deselect any file you don't want written. Esc cancels.",
+    }
   );
-  if (confirm !== "Apply") {
+  if (!picks || picks.length === 0) {
     vscode.window.showInformationMessage("ContextForge: export cancelled (no files written).");
     return;
   }
-  const written = applyExport(planned);
+  const written = applyExport(picks.map((p) => p.file));
   vscode.window.showInformationMessage(`ContextForge: wrote ${written.length} file(s).`);
+}
+
+async function openConflictDiff(backend: Backend, conflictId?: string) {
+  const proj = await requireProject(backend);
+  if (!proj) return;
+  let id = conflictId;
+  if (!id) {
+    const open = backend.repos.listConflicts(proj.projectId, "open");
+    if (open.length === 0) {
+      vscode.window.showInformationMessage("ContextForge: no open conflicts.");
+      return;
+    }
+    const pick = await vscode.window.showQuickPick(
+      open.map((c) => ({ label: c.explanation ?? c.conflictType, id: c.id })),
+      { title: "Compare conflicting rules" }
+    );
+    id = pick?.id;
+  }
+  if (!id) return;
+  const c = backend.repos.getConflict(id);
+  const left = c && backend.repos.getKnowledge(c.leftItemId);
+  const right = c && backend.repos.getKnowledge(c.rightItemId);
+  if (!c || !left || !right) {
+    vscode.window.showErrorMessage("ContextForge: conflict not found.");
+    return;
+  }
+  const fmt = (r: typeof left) =>
+    `# ${r.title}\n\nstatus: ${r.status}\nscope: ${r.scope}\ncategory: ${r.category}\npriority: ${r.priority}\napplies to: ${r.appliesTo ?? "(whole project)"}\n\n${r.content}\n`;
+  await showDiff(
+    virtualUri("rule-A.md", fmt(left)),
+    virtualUri("rule-B.md", fmt(right)),
+    `Conflict: rule A ↔ rule B — ${c.explanation ?? c.conflictType}`
+  );
+}
+
+async function teachCommand(backend: Backend) {
+  const proj = await requireProject(backend);
+  if (!proj) return;
+  const editor = vscode.window.activeTextEditor;
+  const evidence =
+    editor && !editor.selection.isEmpty ? editor.document.getText(editor.selection) : null;
+  const message = await vscode.window.showInputBox({
+    title: "Teach ContextForge",
+    prompt: "What should the agent do (or not do) differently?",
+    placeHolder: "e.g. Never add a third translation table; use form_translations only.",
+    ignoreFocusOut: true,
+  });
+  if (!message?.trim()) return;
+
+  const scopes: { label: string; description?: string; appliesTo: string | null }[] = [
+    { label: "Whole project", appliesTo: null },
+  ];
+  if (editor && editor.document.uri.scheme === "file") {
+    const rel = relative(proj.rootPath, editor.document.uri.fsPath).replace(/\\/g, "/");
+    if (!rel.startsWith("..")) {
+      const dir = dirname(rel);
+      scopes.unshift({ label: "This file", description: rel, appliesTo: rel });
+      if (dir && dir !== ".") {
+        scopes.splice(1, 0, { label: "This folder", description: `${dir}/**`, appliesTo: `${dir}/**` });
+      }
+      const ext = extname(rel);
+      if (ext) scopes.push({ label: `All ${ext} files`, description: `**/*${ext}`, appliesTo: `**/*${ext}` });
+    }
+  }
+  const scope =
+    scopes.length === 1
+      ? scopes[0]
+      : await vscode.window.showQuickPick(scopes, { title: "Where does this apply?", ignoreFocusOut: true });
+  if (!scope) return;
+
+  const res = teach(backend.repos, proj.projectId, {
+    message,
+    appliesTo: scope.appliesTo,
+    evidence,
+  });
+  backend.refresh();
+  const choice = await vscode.window.showInformationMessage(
+    `ContextForge: lesson proposed${res.conflicts ? ` (${res.conflicts} conflict${res.conflicts === 1 ? "" : "s"} found)` : ""}. Review it in the Inbox.`,
+    "Open Inbox"
+  );
+  if (choice === "Open Inbox") InboxPanel.open(backend);
+}
+
+async function connectAgents(backend: Backend, extensionPath: string) {
+  const proj = await requireProject(backend);
+  if (!proj) return;
+  if (!vscode.workspace.isTrusted) {
+    vscode.window.showErrorMessage("ContextForge: workspace is not trusted; refusing to write files.");
+    return;
+  }
+  const serverPath = join(extensionPath, "dist", "mcp-server.cjs");
+  if (!existsSync(serverPath)) {
+    vscode.window.showErrorMessage(`ContextForge: bundled MCP server not found at ${serverPath}.`);
+    return;
+  }
+  const picked = await vscode.window.showQuickPick(
+    (Object.keys(TARGETS) as AgentTarget[]).map((t) => ({
+      label: TARGETS[t].label,
+      description: TARGETS[t].file,
+      picked: t !== "cursor",
+      target: t,
+    })),
+    { canPickMany: true, title: "Connect which agents to ContextForge?" }
+  );
+  if (!picked || picked.length === 0) return;
+
+  let plan;
+  try {
+    plan = planConnect(proj.rootPath, picked.map((p) => p.target), serverPath, backend.dbPath);
+  } catch (err) {
+    vscode.window.showErrorMessage(`ContextForge: ${err instanceof Error ? err.message : err}`);
+    return;
+  }
+  const changed = plan.filter((p) => p.changed);
+  for (const p of changed) {
+    const rel = relative(proj.rootPath, p.path);
+    await showDiff(
+      p.existing ? vscode.Uri.file(p.path) : virtualUri("empty", ""),
+      virtualUri(rel, p.content),
+      `Connect agents: ${rel}`
+    );
+  }
+  if (changed.length) {
+    const ok = await vscode.window.showInformationMessage(
+      `ContextForge will write ${changed.length} MCP config file(s) (diffs are open). Continue?`,
+      { modal: false },
+      "Write files",
+      "Cancel"
+    );
+    if (ok !== "Write files") return;
+    for (const p of changed) {
+      mkdirSync(dirname(p.path), { recursive: true });
+      writeFileSync(p.path, p.content, "utf8");
+    }
+  }
+  const check = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "ContextForge: verifying MCP server…" },
+    () => verifyServer(serverPath, backend.dbPath)
+  );
+  const next = check.ok
+    ? "Next, run “Export Instructions” so AGENTS.md tells agents to call memory_get_context."
+    : "";
+  if (check.ok) {
+    const c = await vscode.window.showInformationMessage(
+      `ContextForge: agents connected (${check.detail}). ${next}`,
+      "Export Instructions"
+    );
+    if (c === "Export Instructions") await vscode.commands.executeCommand("contextforge.exportInstructions");
+  } else {
+    vscode.window.showErrorMessage(`ContextForge: MCP server check failed — ${check.detail}`);
+  }
 }
 
 async function learnFromError(backend: Backend) {
@@ -342,12 +506,15 @@ export function registerCommands(
   register("contextforge.approveLesson", wrap((b, node) => reviewProposedLessons(b, "approve", node)));
   register("contextforge.rejectLesson", wrap((b, node) => reviewProposedLessons(b, "reject", node)));
   register("contextforge.learnFromError", wrap((b) => learnFromError(b)));
+  register("contextforge.teach", wrap((b) => teachCommand(b)));
+  register("contextforge.openConflictDiff", wrap((b, id) => openConflictDiff(b, typeof id === "string" ? id : undefined)));
+  register("contextforge.connectAgents", wrap((b) => connectAgents(b, context.extensionUri.fsPath)));
 
   register("contextforge.openDashboard", async () => {
     if (!vscode.workspace.isTrusted) {
       vscode.window.showErrorMessage("ContextForge: workspace is not trusted.");
       return;
     }
-    DashboardPanel.open(backend, () => treeProvider.refresh());
+    InboxPanel.open(backend);
   });
 }

@@ -2,7 +2,7 @@ import { Repositories, openDatabase } from "@contextforge/database";
 import { detectProject } from "@contextforge/core";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export function defaultDbPath(): string {
   return join(homedir(), ".contextforge", "memory.db");
@@ -14,7 +14,7 @@ export interface ServerContext {
 
 export async function createServerContext(dbPath?: string): Promise<ServerContext> {
   const path = dbPath ?? defaultDbPath();
-  const dir = path.slice(0, path.lastIndexOf("/"));
+  const dir = dirname(path);
   if (dir && !existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }

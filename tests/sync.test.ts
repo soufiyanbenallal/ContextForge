@@ -37,7 +37,8 @@ describe("Phase 5: controlled synchronization", () => {
     expect(paths1.some((p) => p.endsWith(".github/prompts/review-feedback.prompt.md"))).toBe(true);
     expect(paths1.some((p) => p.endsWith(".github/agents/project-reviewer.agent.md"))).toBe(true);
     expect(paths1.some((p) => p.endsWith(".github/skills/translation-tables/SKILL.md"))).toBe(true);
-    expect(planned1.every((f) => f.diff === null)).toBe(true);
+    // New files count as changes (otherwise a fresh repo would never get exported).
+    expect(planned1.every((f) => !f.exists && f.diff !== null)).toBe(true);
 
     // Apply, then change the rule and re-plan: diff should be non-null.
     applyExport(planned1);
@@ -139,5 +140,22 @@ describe("Phase 5: controlled synchronization", () => {
     );
     expect(hit?.conflict).toBe(true);
     expect(hit?.type).toBe("semantic");
+  });
+});
+
+describe("export of brand-new files", () => {
+  it("plans files that do not exist yet as changes (not 'up to date')", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { openDatabase, Repositories } = await import("@contextforge/database");
+    const { planExport } = await import("@contextforge/exporters");
+    const root = mkdtempSync(join(tmpdir(), "cf-newfile-"));
+    const repos = new Repositories(await openDatabase(join(root, "m.db")));
+    const p = repos.upsertProject({ name: "demo", rootPath: root });
+    const planned = planExport(repos, p.id, root);
+    const agents = planned.find((f) => f.path.endsWith("AGENTS.md"))!;
+    expect(agents.exists).toBe(false);
+    expect(agents.diff).toContain("+ # Project Rules");
   });
 });

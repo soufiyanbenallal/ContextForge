@@ -92,4 +92,14 @@ MCP server (agents)  ─┘
   - #4 terminal scraping removed; task-failure capture is opt-in (`contextforge.captureFaults`, default off).
   - #8 Windows path bug, output-channel leak, glob matching, duplicate conflicts, relative-path diagnostics, `.vsix` files removed from git.
 
-**Not started**: live refresh via file watcher, status-bar badge, Phase 2 (Inbox webview, diff-based conflicts/export), Phase 3 (in-editor feedback, Connect agents wizard), real-VS-Code E2E tests.
+**Also done**
+- Live refresh: DB file watcher → `backend.onDidChange` → Inbox, tree, status bar, diagnostics, CodeLens.
+- Status-bar badge (`● N to review · M conflicts`).
+- Review Inbox webview (master–detail, edit, reason chips, batch, undo, keyboard, filter) driven by a vscode-free service layer.
+- Native diffs: conflicts (`Open diff`) and export (per-file diff + pick which files to write).
+- "Teach — this was wrong" (editor context menu), file/folder/extension/project scoping; CodeLens "N rules apply".
+- Connect agents wizard: merges `.vscode/mcp.json` / `.mcp.json` / `.cursor/mcp.json`, shows a diff, verifies the bundled MCP server (`dist/mcp-server.cjs`) via a real handshake; `AGENTS.md` now carries the memory protocol.
+- E2E: 7 tests in a real VS Code (`@vscode/test-electron`), plus a headless Chromium check of the Inbox UI and CI workflow.
+- Bug found by the e2e run and fixed: export treated brand-new files as "unchanged", so a fresh repo never got `AGENTS.md`.
+
+**Not done**: Quick Fix on rule violations (needs rule→code matching); onboarding walkthrough; marketplace packaging; `better-sqlite3` (deliberately not adopted, see above).

@@ -470,6 +470,38 @@ export class Repositories {
     return this.getKnowledge(id);
   }
 
+  /** Edit a rule's text/scope in place (snapshotting a new version). */
+  editKnowledge(
+    id: string,
+    patch: {
+      title?: string;
+      content?: string;
+      appliesTo?: string | null;
+      priority?: number;
+      category?: KnowledgeCategory;
+    },
+    reason: string | null = "Edited"
+  ): KnowledgeItem | null {
+    const item = this.getKnowledge(id);
+    if (!item) return null;
+    this.db
+      .prepare(
+        "UPDATE knowledge_items SET title=?, content=?, applies_to=?, priority=?, category=?, version=version+1, updated_at=? WHERE id=?"
+      )
+      .run(
+        patch.title ?? item.title,
+        patch.content ?? item.content,
+        patch.appliesTo === undefined ? item.appliesTo : patch.appliesTo,
+        patch.priority ?? item.priority,
+        patch.category ?? item.category,
+        nowIso(),
+        id
+      );
+    this.snapshotVersion(id, item.status, reason);
+    this.syncFts(id);
+    return this.getKnowledge(id);
+  }
+
   /**
    * Reinforcement signal for the learning loop.
    * - outcome "prevented": an approved lesson successfully stopped a repeat

@@ -3,7 +3,7 @@
   "version": "0.2.8",
   "private": true,
   "displayName": "ContextForge",
-  "description": "Visual dashboard and feedback UI for ContextForge \u2014 a learning memory layer for AI coding agents",
+  "description": "Visual dashboard and feedback UI for ContextForge — a learning memory layer for AI coding agents",
   "type": "commonjs",
   "publisher": "local-contextforge",
   "icon": "logo.png",
@@ -25,13 +25,16 @@
     "onCommand:contextforge.refresh",
     "onCommand:contextforge.rejectResult",
     "onCommand:contextforge.recordCorrection",
-    "onCommand:contextforge.learnFromError"
+    "onCommand:contextforge.learnFromError",
+    "onCommand:contextforge.teach",
+    "onCommand:contextforge.connectAgents"
   ],
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "package": "vsce package --no-dependencies",
-    "rebuild:native": "echo \"ContextForge uses sql.js (WASM) \u2014 no native addon build required.\""
+    "rebuild:native": "echo \"ContextForge uses sql.js (WASM) — no native addon build required.\"",
+    "test:e2e": "node ./e2e/run.mjs"
   },
   "contributes": {
     "commands": [
@@ -95,6 +98,20 @@
       {
         "command": "contextforge.learnFromError",
         "title": "ContextForge: Learn From Current Errors"
+      },
+      {
+        "command": "contextforge.teach",
+        "title": "ContextForge: Teach — this was wrong",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "contextforge.connectAgents",
+        "title": "ContextForge: Connect Agents (MCP)",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "contextforge.openConflictDiff",
+        "title": "ContextForge: Compare Conflicting Rules"
       }
     ],
     "viewsContainers": {
@@ -119,14 +136,19 @@
     "menus": {
       "editor/context": [
         {
-          "command": "contextforge.showRulesForFile",
+          "command": "contextforge.teach",
           "when": "editorTextFocus",
           "group": "contextforge@1"
         },
         {
+          "command": "contextforge.showRulesForFile",
+          "when": "editorTextFocus",
+          "group": "contextforge@2"
+        },
+        {
           "command": "contextforge.saveAsProjectRule",
           "when": "editorHasSelection",
-          "group": "contextforge@2"
+          "group": "contextforge@3"
         }
       ],
       "view/title": [
@@ -137,6 +159,16 @@
         },
         {
           "command": "contextforge.refresh",
+          "when": "view == contextforgeView",
+          "group": "navigation"
+        },
+        {
+          "command": "contextforge.teach",
+          "when": "view == contextforgeView",
+          "group": "navigation"
+        },
+        {
+          "command": "contextforge.connectAgents",
           "when": "view == contextforgeView",
           "group": "navigation"
         }
@@ -178,6 +210,14 @@
         "contents": "Open a folder to start using ContextForge.\n[Open Folder](command:vscode.openFolder)",
         "when": "workbenchState == empty"
       }
+    ],
+    "activationEvents": [
+      "onStartupFinished",
+      "onCommand:contextforge.openDashboard",
+      "onCommand:contextforge.refresh",
+      "onCommand:contextforge.rejectResult",
+      "onCommand:contextforge.recordCorrection",
+      "onCommand:contextforge.learnFromError"
     ]
   },
   "dependencies": {
@@ -187,7 +227,10 @@
     "@contextforge/shared": "workspace:*"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/vscode": "^1.95.0",
-    "esbuild": "^0.21.5"
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.21.5",
+    "mocha": "^12.0.3"
   }
 }

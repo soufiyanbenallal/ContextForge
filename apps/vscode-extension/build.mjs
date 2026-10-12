@@ -40,3 +40,15 @@ await build({
   sourcemap: true,
   logLevel: "info",
 });
+
+// Self-contained MCP server so "Connect agents" can point clients at a file
+// that ships inside the extension (no repo checkout required).
+await build({
+  entryPoints: ["../../packages/mcp-server/src/bin.ts"],
+  bundle: true,
+  platform: "node",
+  target: "node20",
+  format: "cjs",
+  outfile: "dist/mcp-server.cjs",
+  logLevel: "info",
+});
