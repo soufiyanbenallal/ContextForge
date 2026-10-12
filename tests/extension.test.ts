@@ -28,7 +28,7 @@ describe("Phase 3: VS Code extension data glue", () => {
     expect(proj).not.toBeNull();
     const provider = new MemoryTreeProvider(backend);
     const groups = provider.getChildren();
-    expect(groups.length).toBe(4);
+    expect(groups.length).toBe(5); // dashboard action + 4 groups
     const labels = groups.map((g) => (g.kind === "group" ? g.label : ""));
     expect(labels.some((l) => l.startsWith("Approved rules"))).toBe(true);
     expect(labels.some((l) => l.startsWith("Proposed lessons"))).toBe(true);

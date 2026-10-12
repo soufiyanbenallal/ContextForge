@@ -1,12 +1,16 @@
 import * as vscode from "vscode";
 import { openDatabase, Repositories } from "@contextforge/database";
 import { detectProject } from "@contextforge/core";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, unwatchFile, watchFile } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface Backend {
   repos: Repositories;
+  /** Fires when memory changed (our own write or another process, e.g. an agent via MCP). */
+  onDidChange: vscode.Event<void>;
+  dbPath: string;
+  dispose(): void;
   refresh(): void;
   getCurrentProject(): { projectId: string; rootPath: string } | null;
 }
@@ -21,14 +25,29 @@ export function resolveDbPath(): string {
 
 export async function createBackend(): Promise<Backend> {
   const path = resolveDbPath();
-  const dir = path.slice(0, path.lastIndexOf("/"));
+  const dir = dirname(path);
   if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
   const db = await openDatabase(path);
   const repos = new Repositories(db);
 
   const event = new vscode.EventEmitter<void>();
+  // Poll the DB file so writes from other processes (MCP server, CLI) show up
+  // live. Debounced; harmless when we caused the change ourselves.
+  let timer: NodeJS.Timeout | undefined;
+  watchFile(path, { interval: 700 }, (cur, prev) => {
+    if (cur.mtimeMs === prev.mtimeMs && cur.size === prev.size) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => event.fire(), 150);
+  });
   return {
     repos,
+    dbPath: path,
+    onDidChange: event.event,
+    dispose: () => {
+      clearTimeout(timer);
+      unwatchFile(path);
+      event.dispose();
+    },
     refresh: () => event.fire(),
     getCurrentProject: () => {
       const folders = vscode.workspace.workspaceFolders;

@@ -29,7 +29,16 @@ const CATEGORY_HEADINGS: Record<string, string> = {
 export function renderAgentsMd(items: KnowledgeItem[]): string {
   const approved = items.filter((i) => i.status === "approved");
   const byCat = groupByCategory(approved);
-  const lines: string[] = ["# Project Rules", ""];
+  const lines: string[] = [
+    "# Project Rules",
+    "",
+    "## ContextForge memory protocol",
+    "",
+    "- Before planning or editing, call the `memory_get_context` MCP tool with the task and files.",
+    "- When the user rejects or corrects your work, call `memory_record_feedback` with their reason.",
+    "- Never edit this file's rules directly; propose lessons so a human can approve them.",
+    "",
+  ];
 
   for (const [cat, catItems] of byCat) {
     const heading = CATEGORY_HEADINGS[cat] ?? cat;

@@ -8,7 +8,7 @@ import {
   renderSkillMd,
 } from "./renderers.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface PlannedFile {
   path: string;
@@ -49,6 +49,10 @@ function planOne(rootPath: string, rel: string, content: string): PlannedFile {
   if (exists) {
     const current = readFileSync(path, "utf8");
     if (current !== content) diff = buildDiff(current, content);
+  } else {
+    // A file that doesn't exist yet is a change too (all additions); a null
+    // diff means "unchanged", which previously hid brand-new files.
+    diff = buildDiff("", content);
   }
   return { path, content, exists, diff };
 }
@@ -138,7 +142,7 @@ export function planExport(
 export function applyExport(planned: PlannedFile[]): string[] {
   const written: string[] = [];
   for (const f of planned) {
-    mkdirSync(f.path.slice(0, f.path.lastIndexOf("/")), { recursive: true });
+    mkdirSync(dirname(f.path), { recursive: true });
     writeFileSync(f.path, f.content, "utf8");
     written.push(f.path);
   }

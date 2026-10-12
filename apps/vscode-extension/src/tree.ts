@@ -3,6 +3,7 @@ import { Backend } from "./backend.js";
 import { KnowledgeItem, ConflictRecord, CapabilityRecord } from "@contextforge/shared";
 
 export type TreeNode =
+  | { kind: "action"; label: string; command: string; icon: string }
   | { kind: "group"; label: string; children: TreeNode[] }
   | { kind: "rule"; item: KnowledgeItem }
   | { kind: "conflict"; item: ConflictRecord }
@@ -23,6 +24,13 @@ export class MemoryTreeProvider
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
     switch (node.kind) {
+      case "action": {
+        const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+        item.command = { command: node.command, title: node.label };
+        item.iconPath = new vscode.ThemeIcon(node.icon);
+        item.contextValue = "action:dashboard";
+        return item;
+      }
       case "group": {
         const item = new vscode.TreeItem(
           node.label,
@@ -79,6 +87,10 @@ export class MemoryTreeProvider
     }
   }
 
+  getParent(): undefined {
+    return undefined;
+  }
+
   getChildren(node?: TreeNode): TreeNode[] {
     if (node) {
       return node.kind === "group" ? node.children : [];
@@ -98,6 +110,12 @@ export class MemoryTreeProvider
     const caps = this.backend.repos.listCapabilities();
 
     const groups: TreeNode[] = [];
+    groups.push({
+      kind: "action",
+      label: `Open dashboard${proposed.length ? ` — ${proposed.length} to review` : ""}`,
+      command: "contextforge.openDashboard",
+      icon: "dashboard",
+    });
     groups.push({
       kind: "group",
       label: `Approved rules (${approved.length})`,

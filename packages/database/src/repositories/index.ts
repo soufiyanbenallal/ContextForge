@@ -470,6 +470,38 @@ export class Repositories {
     return this.getKnowledge(id);
   }
 
+  /** Edit a rule's text/scope in place (snapshotting a new version). */
+  editKnowledge(
+    id: string,
+    patch: {
+      title?: string;
+      content?: string;
+      appliesTo?: string | null;
+      priority?: number;
+      category?: KnowledgeCategory;
+    },
+    reason: string | null = "Edited"
+  ): KnowledgeItem | null {
+    const item = this.getKnowledge(id);
+    if (!item) return null;
+    this.db
+      .prepare(
+        "UPDATE knowledge_items SET title=?, content=?, applies_to=?, priority=?, category=?, version=version+1, updated_at=? WHERE id=?"
+      )
+      .run(
+        patch.title ?? item.title,
+        patch.content ?? item.content,
+        patch.appliesTo === undefined ? item.appliesTo : patch.appliesTo,
+        patch.priority ?? item.priority,
+        patch.category ?? item.category,
+        nowIso(),
+        id
+      );
+    this.snapshotVersion(id, item.status, reason);
+    this.syncFts(id);
+    return this.getKnowledge(id);
+  }
+
   /**
    * Reinforcement signal for the learning loop.
    * - outcome "prevented": an approved lesson successfully stopped a repeat
@@ -661,6 +693,16 @@ export class Repositories {
     conflictType: ConflictRecord["conflictType"];
     explanation?: string | null;
   }): ConflictRecord {
+    // Re-running conflict detection must not pile up duplicates: return the
+    // existing open conflict for the same pair of rules (either order).
+    const existing = this.db
+      .prepare(
+        "SELECT id FROM conflicts WHERE status='open' AND ((left_item_id=? AND right_item_id=?) OR (left_item_id=? AND right_item_id=?)) LIMIT 1"
+      )
+      .get(input.leftItemId, input.rightItemId, input.rightItemId, input.leftItemId) as
+      | { id: string }
+      | undefined;
+    if (existing) return this.getConflict(existing.id)!;
     const id = newId("cnf");
     this.db
       .prepare(

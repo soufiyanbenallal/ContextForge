@@ -25,13 +25,16 @@
     "onCommand:contextforge.refresh",
     "onCommand:contextforge.rejectResult",
     "onCommand:contextforge.recordCorrection",
-    "onCommand:contextforge.learnFromError"
+    "onCommand:contextforge.learnFromError",
+    "onCommand:contextforge.teach",
+    "onCommand:contextforge.connectAgents"
   ],
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "package": "vsce package --no-dependencies",
-    "rebuild:native": "echo \"ContextForge uses sql.js (WASM) — no native addon build required.\""
+    "rebuild:native": "echo \"ContextForge uses sql.js (WASM) — no native addon build required.\"",
+    "test:e2e": "node ./e2e/run.mjs"
   },
   "contributes": {
     "commands": [
@@ -95,6 +98,20 @@
       {
         "command": "contextforge.learnFromError",
         "title": "ContextForge: Learn From Current Errors"
+      },
+      {
+        "command": "contextforge.teach",
+        "title": "ContextForge: Teach — this was wrong",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "contextforge.connectAgents",
+        "title": "ContextForge: Connect Agents (MCP)",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "contextforge.openConflictDiff",
+        "title": "ContextForge: Compare Conflicting Rules"
       }
     ],
     "viewsContainers": {
@@ -112,22 +129,26 @@
           "id": "contextforgeView",
           "name": "ContextForge",
           "icon": "$(brain)",
-          "contextualTitle": "ContextForge",
-          "clickCommand": "contextforge.openDashboard"
+          "contextualTitle": "ContextForge"
         }
       ]
     },
     "menus": {
       "editor/context": [
         {
-          "command": "contextforge.showRulesForFile",
+          "command": "contextforge.teach",
           "when": "editorTextFocus",
           "group": "contextforge@1"
         },
         {
+          "command": "contextforge.showRulesForFile",
+          "when": "editorTextFocus",
+          "group": "contextforge@2"
+        },
+        {
           "command": "contextforge.saveAsProjectRule",
           "when": "editorHasSelection",
-          "group": "contextforge@2"
+          "group": "contextforge@3"
         }
       ],
       "view/title": [
@@ -138,6 +159,16 @@
         },
         {
           "command": "contextforge.refresh",
+          "when": "view == contextforgeView",
+          "group": "navigation"
+        },
+        {
+          "command": "contextforge.teach",
+          "when": "view == contextforgeView",
+          "group": "navigation"
+        },
+        {
+          "command": "contextforge.connectAgents",
           "when": "view == contextforgeView",
           "group": "navigation"
         }
@@ -165,9 +196,29 @@
           ],
           "default": null,
           "description": "Path to the ContextForge SQLite database. Defaults to ~/.contextforge/memory.db"
+        },
+        "contextforge.captureFaults": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically record failed VS Code tasks (build/test/lint) as proposed lessons. Off by default."
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "contextforgeView",
+        "contents": "Open a folder to start using ContextForge.\n[Open Folder](command:vscode.openFolder)",
+        "when": "workbenchState == empty"
+      }
+    ],
+    "activationEvents": [
+      "onStartupFinished",
+      "onCommand:contextforge.openDashboard",
+      "onCommand:contextforge.refresh",
+      "onCommand:contextforge.rejectResult",
+      "onCommand:contextforge.recordCorrection",
+      "onCommand:contextforge.learnFromError"
+    ]
   },
   "dependencies": {
     "@contextforge/core": "workspace:*",
@@ -176,7 +227,10 @@
     "@contextforge/shared": "workspace:*"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/vscode": "^1.95.0",
-    "esbuild": "^0.21.5"
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.21.5",
+    "mocha": "^12.0.3"
   }
 }

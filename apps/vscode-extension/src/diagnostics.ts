@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { Backend } from "./backend.js";
 import { detectConflicts } from "@contextforge/core";
+import { isAbsolute, join } from "node:path";
 
 export class MemoryDiagnostics {
   private collection: vscode.DiagnosticCollection;
@@ -54,7 +55,7 @@ export class MemoryDiagnostics {
 
     for (const [file, diags] of byFile) {
       if (file === "<global>") continue;
-      const uri = vscode.Uri.file(file);
+      const uri = vscode.Uri.file(isAbsolute(file) ? file : join(proj.rootPath, file));
       this.collection.set(uri, diags);
     }
   }

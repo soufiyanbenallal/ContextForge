@@ -26,16 +26,26 @@ See [`app-description.md`](./app-description.md) for the full product spec and
 
 1. Install the extension (see *Building* below) and open a **folder/workspace**
    (not a single file). Trust the workspace when prompted.
-2. The **ContextForge** view appears in the Explorer sidebar (next to Files,
-   Git, Extensions). **Click it** to open the full Dashboard — a visual panel
-   showing Proposed / Approved rules, Conflicts, and Skills & MCPs, each with
-   inline Approve / Reject / Supersede / Resolve / Enable buttons.
-3. From the Dashboard (or Command Palette → *ContextForge*):
-   - **Record feedback** — log a reject/correction; it lands as a proposed
-     lesson you can approve in the GUI.
-   - **Export instructions** — previews a diff, then writes `AGENTS.md` +
-     `.github/*` into your repo on confirm.
-   - **Check conflicts** — detects and records rule conflicts.
+2. Click the **ContextForge** icon in the Activity Bar, or the
+   `ContextForge ● N to review` item in the status bar, to open the
+   **Review Inbox** (an editor tab).
+3. In the Inbox:
+   - **Inbox** — proposed lessons, master/detail. **Approve · Edit · Reject**
+     (with reason chips), batch select, **Undo**. Keys: `J/K` move, `A` approve,
+     `E` edit, `R` reject.
+   - **Rules** — approved rules; replace or move back to the Inbox.
+   - **Conflicts** — both rules side by side: *Keep A / Keep B / Keep both /
+     Not a conflict*, or **Open diff** (native VS Code diff).
+   - **Skills & MCPs**, **Activity** (recorded feedback → *Propose lesson*).
+4. In the editor: right-click → **Teach — this was wrong** (uses your selection
+   as evidence and scopes the rule to this file / folder / extension / project).
+   Files covered by approved rules show a CodeLens.
+5. **Export…** opens a native diff for every file and writes only the ones you
+   confirm. **Connect agents…** writes the MCP config for VS Code / Claude
+   Code / Cursor (shown as a diff first) and verifies the server starts.
+
+The Inbox updates live when an agent writes through MCP (no reload needed).
+Recording failed tasks as lessons is opt-in: `contextforge.captureFaults`.
 
 Configuration: Settings → **ContextForge → Db Path** (defaults to
 `~/.contextforge/memory.db`).
@@ -63,6 +73,8 @@ AI client / MCP        ──▶  ContextForge MCP server          ──▶  SQ
 pnpm install
 pnpm -r build
 pnpm --filter @contextforge/tests test
+xvfb-run -a pnpm --filter contextforge-vscode test:e2e   # real VS Code (Linux; plain `pnpm …` on desktop)
+node tests/inbox-ui.playwright.mjs                          # optional headless UI check (needs Playwright)
 
 # Extension vsix:
 cd apps/vscode-extension && pnpm package    # -> contextforge-vscode-0.1.0.vsix

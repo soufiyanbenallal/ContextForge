@@ -3,3 +3,5 @@ apps/vscode-extension/node_modules
 dist
 tests/node_modules
 packages/shared/dist
+*.vsix
+.vscode-test
